@@ -1,16 +1,9 @@
 # requirements.txt
 
-# Core numerical and scientific computing
 numpy
-
-# Environment standard for reinforcement learning
 gymnasium
-
-# Reinforcement learning algorithms (includes PyTorch)
-stable-baselines3[extra]
-
-# Plotting and visualization
+stable-baselines3
 matplotlib
-
-# Progress bars for training loops
 tqdm
+tensorboard
+rich
