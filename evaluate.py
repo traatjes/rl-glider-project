@@ -38,7 +38,7 @@ for _ in range(config.EVAL_EPISODES):
     episode_reward = 0
     episode_max_dist = 0
     while not (done or truncated):
-        action, _ = model.predict(obs, deterministic=True)
+        action, _ = model.predict(obs, deterministic=False)
         obs, reward, dones, info = eval_env.step(action)
         done = dones[0]
         truncated = info[0].get("TimeLimit.truncated", False)
@@ -68,17 +68,20 @@ path_x = [vis_env.unwrapped.position[0]]
 path_y = [vis_env.unwrapped.position[1]]
 path_alt = [vis_env.unwrapped.altitude]
 max_x_visualization = vis_env.unwrapped.position[0]
+episode_reward_visualization = 0
 
 while not (done or truncated):
     normalized_obs = eval_env.normalize_obs(obs_vis)
     action, _ = model.predict(normalized_obs, deterministic=True)
-    obs_vis, _, terminated, truncated, info = vis_env.step(action)
+    obs_vis, reward_vis, terminated, truncated, info = vis_env.step(action)
     done = terminated or truncated
     path_x.append(vis_env.unwrapped.position[0])
     path_y.append(vis_env.unwrapped.position[1])
     path_alt.append(vis_env.unwrapped.altitude)
+    episode_reward_visualization += reward_vis
+
     max_x_visualization = max(max_x_visualization, vis_env.unwrapped.position[0])
-print(f"Visualized flight stats: Final X = {path_x[-1]:.2f}m, Max X = {max_x_visualization:.2f}m")
+print(f"Visualized flight stats: Final X = {path_x[-1]:.2f}m, Max X = {max_x_visualization:.2f}m, Reward = {episode_reward_visualization:.2f}")
 
 
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 10), gridspec_kw={'height_ratios': [3, 1]})
@@ -123,8 +126,23 @@ ax2.set_xlabel("Time (steps)")
 ax2.set_ylabel("Altitude (m)")
 ax2.legend()
 ax2.grid(True)
-plt.show()
 
+
+# --- Create a second figure for the histogram ---
+fig_hist, ax_hist = plt.subplots(figsize=(10, 6))
+ax_hist.hist(all_max_distance, bins=20, edgecolor='black')
+ax_hist.set_title("Distribution of Final Distances")
+ax_hist.set_xlabel("Max Distance Achieved (m)")
+ax_hist.set_ylabel("Number of Episodes")
+ax_hist.grid(axis='y', alpha=0.75)
+
+# Add a vertical line for the mean distance
+mean_dist = np.mean(all_max_distance)
+ax_hist.axvline(mean_dist, color='r', linestyle='dashed', linewidth=2)
+ax_hist.text(mean_dist*1.1, ax_hist.get_ylim()[1]*0.9, f'Mean: {mean_dist:.0f}m', color='r')
+
+plt.tight_layout()
+plt.show()
 
 
 eval_env.close()

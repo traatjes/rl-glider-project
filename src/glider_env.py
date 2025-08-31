@@ -12,30 +12,20 @@ class GliderEnv(gym.Env):
         super().__init__()
         self.action_space = spaces.Discrete(3)
 
-        if config.USE_AUGMENTED_OBSERVATIONS:
-            # Obs: [altitude, v_velocity] + N * [normalized_dist, sin, cos, strength]
-            glider_obs_low = [0, -np.inf]
-            glider_obs_high = [np.inf, np.inf]
+        # Obs: [altitude, v_velocity] + N * [normalized_dist, sin, cos, strength]
+        glider_obs_low = [0, -np.inf]
+        glider_obs_high = [np.inf, np.inf]
+        thermal_low_bounds = [0.0, -1.0, -1.0, 0.0]
+        thermal_high_bounds = [1.0, 1.0, 1.0, np.inf]
+        thermals_obs_low = []
+        thermals_obs_high = []
+        for _ in range(config.MAX_OBSERVED_THERMALS):
+            thermals_obs_low.extend(thermal_low_bounds)
+            thermals_obs_high.extend(thermal_high_bounds)
+        low = np.array(glider_obs_low + thermals_obs_low, dtype=np.float32)
+        high = np.array(glider_obs_high + thermals_obs_high, dtype=np.float32)
+        self.observation_space = spaces.Box(low, high, dtype=np.float32)
 
-            # [dist, sin, cos, str]
-            thermal_low_bounds = [0.0, -1.0, -1.0, 0.0]
-            thermal_high_bounds = [1.0, 1.0, 1.0, np.inf]
-
-            thermals_obs_low = []
-            thermals_obs_high = []
-            for _ in range(config.MAX_OBSERVED_THERMALS):
-                thermals_obs_low.extend(thermal_low_bounds)
-                thermals_obs_high.extend(thermal_high_bounds)
-
-            low = np.array(glider_obs_low + thermals_obs_low, dtype=np.float32)
-            high = np.array(glider_obs_high + thermals_obs_high, dtype=np.float32)
-
-            self.observation_space = spaces.Box(low, high, dtype=np.float32)
-        else:
-            # Obs: [x, y, heading, altitude, v_velocity]
-            low = np.array([-np.inf, -np.inf, 0, 0, -np.inf], dtype=np.float32)
-            high = np.array([np.inf, np.inf, 360, np.inf, np.inf], dtype=np.float32)
-            self.observation_space = spaces.Box(low, high, dtype=np.float32)
 
         self.start_pos = config.START_POS
         self.start_altitude = config.START_ALTITUDE
@@ -46,6 +36,10 @@ class GliderEnv(gym.Env):
         self.delta_t = config.DELTA_T
         self.max_steps = config.MAX_EPISODE_STEPS
 
+    def _lerp(self, val1, val2, t):
+        """Helper function for linear interpolation."""
+        return val1 * (1 - t) + val2 * t
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.current_step = 0
@@ -55,8 +49,6 @@ class GliderEnv(gym.Env):
         self.vertical_velocity = 0
         self.thermals = []
         self.next_milestone = 1000.0
-
-        # Episode stats
         self.last_x = self.position[0]
         self.max_x = self.position[0]
         self.episode_altitude_sum = 0
@@ -65,16 +57,24 @@ class GliderEnv(gym.Env):
         self.updraft = 0.0
         self.visited_thermals = set()  # ✨ Add a set to track visited thermals
 
-        for _ in range(config.NUM_THERMALS):
-            if config.EASY_MODE:
-                strength = self.np_random.uniform(config.EASY_THERMAL_MIN_STRENGTH, config.EASY_THERMAL_MAX_STRENGTH)
-                radius = self.np_random.uniform(config.EASY_THERMAL_MIN_RADIUS, config.EASY_THERMAL_MAX_RADIUS)
-            else:
-                strength = self.np_random.uniform(config.THERMAL_MIN_STRENGTH, config.THERMAL_MAX_STRENGTH)
-                radius = self.np_random.uniform(config.THERMAL_MIN_RADIUS, config.THERMAL_MAX_RADIUS)
-            x = self.np_random.uniform(config.THERMAL_MIN_X, config.THERMAL_MAX_X)
-            y = self.np_random.uniform(config.THERMAL_MIN_Y, config.THERMAL_MAX_Y)
-            self.thermals.append([x, y, strength, radius])
+        for i in range(config.NUM_ZONES):
+            # Define the start and end of the current zone
+            zone_start_x = i * config.ZONE_SIZE
+            zone_end_x = (i + 1) * config.ZONE_SIZE
+
+            for _ in range(config.THERMALS_PER_ZONE):
+                # Interpolate strength and radius based on the difficulty setting
+                min_strength = self._lerp(config.EASY_THERMAL_MIN_STRENGTH, config.THERMAL_MIN_STRENGTH, config.DIFFICULTY)
+                max_strength = self._lerp(config.EASY_THERMAL_MAX_STRENGTH, config.THERMAL_MAX_STRENGTH, config.DIFFICULTY)
+                min_radius = self._lerp(config.EASY_THERMAL_MIN_RADIUS, config.THERMAL_MIN_RADIUS, config.DIFFICULTY)
+                max_radius = self._lerp(config.EASY_THERMAL_MAX_RADIUS, config.THERMAL_MAX_RADIUS, config.DIFFICULTY)
+
+                # Generate the thermal with the calculated properties *within the current zone*
+                strength = self.np_random.uniform(min_strength, max_strength)
+                radius = self.np_random.uniform(min_radius, max_radius)
+                x = self.np_random.uniform(zone_start_x, zone_end_x)
+                y = self.np_random.uniform(config.THERMAL_MIN_Y, config.THERMAL_MAX_Y)
+                self.thermals.append([x, y, strength, radius])
 
         thermals_array = np.array(self.thermals)
         self.thermal_positions = thermals_array[:, :2]
@@ -86,7 +86,17 @@ class GliderEnv(gym.Env):
     def step(self, action):
         self.current_step += 1
 
-        # 1. Update Glider State
+        self._update_glider_state(action)
+        terminated, truncated = self._check_termination()
+        reward = self._calculate_reward(terminated, truncated)
+        obs = self._get_obs()
+        info = self._get_info()
+        self._update_info_log(info, terminated, truncated)
+
+        return obs, reward, terminated, truncated, info
+
+    def _update_glider_state(self, action):
+        # Update Glider State
         if action == 0: self.heading -= self.turn_rate
         elif action == 2: self.heading += self.turn_rate
         self.heading %= 360
@@ -94,59 +104,57 @@ class GliderEnv(gym.Env):
         self.position[0] += self.glider_speed * np.cos(heading_rad) * self.delta_t
         self.position[1] += self.glider_speed * np.sin(heading_rad) * self.delta_t
 
-        # 2. Update Altitude (your logic is perfect)
+        # Update Altitude
         dists = np.linalg.norm(self.position - self.thermal_positions, axis=1)
-        inside_mask = dists < self.thermal_radii
-        updraft = np.sum(self.thermal_strengths[inside_mask])
+        self.inside_mask = dists < self.thermal_radii
+        updraft = np.sum(self.thermal_strengths[self.inside_mask])
         self.vertical_velocity = updraft - self.sink_rate
         self.altitude += self.vertical_velocity * self.delta_t
 
-        # 3. Check for Termination Conditions
-        terminated = self.altitude <= 0
+    def _check_termination(self):
+        crashed = self.altitude <= 0
+        over_ceiling = self.altitude >= 2000
+        offside = abs(self.position[1]) > 1200
         truncated = self.current_step >= self.max_steps
+        terminated = crashed or over_ceiling or offside
 
-        # 4. Calculate Reward
+        return terminated, truncated
+
+    def _calculate_reward(self, terminated, truncated):
         reward = 0.0
 
-        # Check which thermals the agent is currently inside
-        current_dists = np.linalg.norm(self.position - self.thermal_positions, axis=1)
-        inside_indices = np.where(current_dists < self.thermal_radii)[0]
-
-        if len(inside_indices) > 0:
-            # --- Inside a Thermal ---
-            for idx in inside_indices:
-                if idx not in self.visited_thermals:
-                    # Give a one-time bonus for discovering a new thermal
-                    reward += config.REWARD_COEFF_DISCOVERY
-                    self.visited_thermals.add(idx)
-        else:
-            # --- Cruising (Not in a Thermal) ---
-            if self.altitude > config.CRUISING_ALTITUDE_THRESHOLD:
-                progress = self.position[0] - self.last_x
-                if progress > 0:  # Only reward positive progress
-                    reward += config.REWARD_COEFF_CRUISING * progress
-
-        if self.position[0] >= self.next_milestone:
-            reward += config.REWARD_COEFF_MILESTONE
-            self.next_milestone += 1000.0  # Set the next milestone
-
+        # Unconditional Progress Reward (Always Active)
+        progress = self.position[0] - self.last_x
+        if progress > 0:
+            reward += config.REWARD_COEFF_PROGRESS * progress
+        elif progress < 0 and not self.in_thermal:
+            # Only penalize backward movement if not inside a thermal
+            # The penalty is proportional to how much it moved backward
+            reward += config.REWARD_COEFF_PROGRESS_NEG * progress
         self.last_x = self.position[0]
 
+        # Milestone Bonus
+        if self.position[0] >= self.next_milestone:
+            reward += config.REWARD_COEFF_MILESTONE
+            self.next_milestone += 1000.0
+
+        # Potential Energy Bonus
+        reward += config.REWARD_COEFF_ALTITUDE * self.altitude
+
+        # Termination Penalty
         if terminated or truncated:
             reward += config.REWARD_COEFF_DISTANCE * self.position[0]
             if terminated:
                 reward += config.REWARD_TERMINAL_PENALTY
 
+        return reward
 
-        # 5. Update Info and Stats
-        self.in_thermal = len(inside_indices) > 0
+    def _update_info_log(self, info, terminated, truncated):
+        self.in_thermal = np.any(self.inside_mask)
         self.max_x = max(self.max_x, self.position[0])
         self.episode_altitude_sum += self.altitude
         if self.in_thermal:
             self.episode_steps_in_thermal += 1
-
-        obs = self._get_obs()
-        info = self._get_info()
 
         if terminated or truncated:
             total_steps = self.current_step
@@ -154,32 +162,8 @@ class GliderEnv(gym.Env):
             info['ep_max_x_distance'] = self.max_x - self.start_pos[0]
             info['ep_time_in_thermal'] = 100 * self.episode_steps_in_thermal / total_steps
 
-        return obs, reward, terminated, truncated, info
-
-
-    def _get_closest_thermal_info(self):
-        """Helper to get distance, angle, and strength of the nearest thermal."""
-        if len(self.thermals) == 0:
-            return None
-
-        dists = np.linalg.norm(self.position - self.thermal_positions, axis=1)
-        nearest_idx = np.argmin(dists)
-
-        vec_to_thermal = self.thermal_positions[nearest_idx] - self.position
-        dist_to_thermal = dists[nearest_idx]
-
-        angle_to_thermal_abs = np.rad2deg(np.arctan2(vec_to_thermal[1], vec_to_thermal[0]))
-        angle_relative = angle_to_thermal_abs - self.heading
-        angle_relative = (angle_relative + 180) % 360 - 180
-
-        strength = self.thermal_strengths[nearest_idx]
-
-        return dist_to_thermal, angle_relative, strength
 
     def _get_obs(self):
-        if not config.USE_AUGMENTED_OBSERVATIONS:
-            return np.array([self.position[0], self.position[1], self.heading, self.altitude, self.vertical_velocity], dtype=np.float32)
-
         # Base observation: the glider's own state
         obs_list = [self.altitude, self.vertical_velocity]
 

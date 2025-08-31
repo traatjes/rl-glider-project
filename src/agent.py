@@ -1,12 +1,11 @@
 from stable_baselines3 import PPO
-from sb3_contrib import RecurrentPPO
 from src import config
 
 
 def create_agent(env):
     """Creates a PPO agent with hyperparameters from the config file."""
-    model = RecurrentPPO(
-        policy='MlpLstmPolicy',
+    model = PPO(
+        policy=config.POLICY,
         env=env,
         verbose=1,
         learning_rate=config.LEARNING_RATE,
@@ -14,14 +13,11 @@ def create_agent(env):
         n_epochs=config.N_EPOCHS,
         ent_coef=config.ENT_COEF,
         gamma=config.GAMMA,
-        tensorboard_log=config.LOGS_PATH
+        tensorboard_log=config.LOGS_PATH,
+        clip_range=0.1,
+        gae_lambda=0.9
     )
     return model
-
-def train_agent(agent, total_timesteps=config.TOTAL_TIMESTEPS, callback=None):
-    """Trains the agent for a given number of timesteps."""
-    agent.learn(total_timesteps=total_timesteps, progress_bar=True, callback=callback)
-    return agent
 
 def save_agent(agent, file_path=config.MODEL_PATH):
     """Saves the trained agent's model."""
