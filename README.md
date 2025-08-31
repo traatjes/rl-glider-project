@@ -2,6 +2,7 @@
 
 ⚠️IMPORTANT⚠️: This project already contains a trained model. If you wish to create one from scratch, please delete or rename both glider_agent.zip and vec_normalize.pkl in the ./results/models/ folder.
 
+
 This project, created for the course AE4350 at TU Delft, is an implementation of a reinforcement learning agent that learns the complex, bio-inspired skill of cross-country soaring. The agent is trained to pilot a simulated glider, intelligently utilizing procedurally generated thermal updrafts to maximize its travel distance.
 
 The final agent was trained using a multi-stage **curriculum learning** approach, where it first mastered a simplified environment before being fine-tuned on a more challenging and realistic one. The resulting policy demonstrates sophisticated energy management, mimicking the "climb-and-glide" strategy of real-world soaring birds.
@@ -25,7 +26,7 @@ To set up and run this project locally, follow these steps.
 **1. Clone the repository:**
 ```bash
 git clone https://github.com/traatjes/rl-glider-project.git
-cd rl-glider-project.git
+cd rl-glider-project
 ```
 
 **2. Create and activate a virtual environment:**
