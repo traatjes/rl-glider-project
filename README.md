@@ -1,20 +1,18 @@
-# Autonomous Glider Reinforcement Learning  glider
+# Autonomous Glider Reinforcement Learning
 
-This project is an implementation of a reinforcement learning agent that learns to pilot a glider, using thermal updrafts to maximize its travel distance. The agent operates in a custom 2D environment and learns its policy using the Proximal Policy Optimization (PPO) algorithm from Stable Baselines3.
+This project, created for the course AE4350 at TU Delft, is an implementation of a reinforcement learning agent that learns the complex, bio-inspired skill of cross-country soaring. The agent is trained to pilot a simulated glider, intelligently utilizing procedurally generated thermal updrafts to maximize its travel distance.
 
-This was created for the course AE4350 at TU Delft.
+The final agent was trained using a multi-stage **curriculum learning** approach, where it first mastered a simplified environment before being fine-tuned on a more challenging and realistic one. The resulting policy demonstrates sophisticated energy management, mimicking the "climb-and-glide" strategy of real-world soaring birds.
 
-![GIF of a trained agent's flight path]
-*(TODO: Add a GIF or image here of a successful flight path once your agent is trained!)*
-
+![A demonstration of the trained agent's soaring behavior.](flight_path.gif)
 ---
 
 ## Features
 
-* **Custom 2D Glider Environment:** A Gymnasium-compatible environment where a glider's altitude is affected by Gaussian thermal updrafts.
-* **Reinforcement Learning Agent:** An agent trained with Stable Baselines3 to navigate the environment.
-* **Configurable Parameters:** Easily tweak simulation and training parameters in `src/config.py`.
-* **Result Visualization:** Automatically saves plots of flight paths and training rewards.
+* **Advanced Soaring Environment:** A custom Gymnasium-compatible environment featuring a procedurally generated **"Zoned Gaussian Corridor"** of thermals. This ensures a consistent but non-repetitive challenge, forcing the agent to learn a general soaring strategy.
+* **Intelligent Soaring Agent:** The agent, trained with Proximal Policy Optimization (PPO), learns a robust policy for cross-country flight. It demonstrates complex behaviors like pathfinding through thermal streets and managing its altitude to stay within a realistic flight envelope.
+* **Gradual Curriculum Learning:** The training process is structured with a "difficulty knob" in the configuration. This allows the agent to first master the basics in an easy world before being gradually exposed to more difficult, realistic conditions, preventing catastrophic forgetting.
+* **Detailed Evaluation:** A dedicated script (`evaluate.py`) for running statistical analysis over many episodes and generating high-quality visualizations of the agent's flight path and altitude profile.
 
 ---
 
@@ -50,13 +48,33 @@ pip install -r requirements.txt
 
 ## Usage
 
-To train a new agent, run the main training script:
+This project uses a multi-stage curriculum learning approach for best results.
 
+### Training
+
+The training process is managed by the `DIFFICULTY` setting in `src/config.py`.
+
+1.  **Phase 1 (Master the Basics):**
+    * Open `src/config.py` and set `DIFFICULTY = 0.0`.
+    * **Important:** Delete any existing model files in the `results/models/` directory to start fresh.
+    * Run training until the agent's performance stabilizes at a high level:
+        ```bash
+        python src/train.py
+        ```
+
+2.  **Phase 2 (Fine-Tuning):**
+    * Stop the training with `Ctrl+C`. The expert "easy mode" model will be saved.
+    * In `src/config.py`, increase the difficulty to the next stage (e.g., `DIFFICULTY = 0.5`).
+    * Run the training script again. It will automatically load the previously saved model and continue training (fine-tuning) in the harder environment.
+    * Repeat this process, gradually increasing the difficulty to `1.0` for the final, most robust agent.
+
+### Evaluation
+
+To evaluate your trained agent and visualize its flight path:
 ```bash
-python src/train.py
+python evaluate.py
 ```
-
-Trained models, logs, and plots will be saved in the `results/` directory.
+This will print performance statistics averaged over 50 episodes and generate plots of a typical flight.
 
 ---
 
@@ -66,12 +84,13 @@ The project is organized as follows:
 
 ```
 ├── src/
-│   ├── glider_env.py     # The custom Gymnasium environment
-│   ├── agent.py          # Agent definition (if separated from training)
-│   ├── train.py          # Main script to run training
-│   ├── config.py         # All project parameters
-│   └── utils.py          # Plotting functions and other helpers
-├── results/              # Output folder for models, plots, and logs
+│   ├── glider_env.py     # The custom Gymnasium environment for the glider
+│   ├── agent.py          # Creates the PPO agent structure
+│   ├── train.py          # Main script to run the training process
+│   ├── callback.py       # A simple callback for custom logging
+│   └── config.py         # All project and training parameters
+├── results/              # Output folder for models, logs, and plots
+├── evaluate.py           # Script to evaluate a trained agent
 ├── .gitignore            # Files to be ignored by Git
 ├── requirements.txt      # Project dependencies
 └── README.md             # You are here!
