@@ -5,4 +5,6 @@
 __pycache__/
 
 # Results and output
-results/
+results/models/*/
+results/logs
+results/plots

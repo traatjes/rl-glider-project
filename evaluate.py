@@ -155,7 +155,7 @@ fig_hist, ax_hist = plt.subplots(figsize=(10, 6))
 ax_hist.hist(all_max_distance_stochastic, bins=20, edgecolor='black', alpha=0.7, label='Stochastic (deterministic=False)')
 ax_hist.hist(all_max_distance_deterministic, bins=20, edgecolor='black', alpha=0.7, label='Deterministic (deterministic=True)')
 
-ax_hist.set_title("Distribution of Final Distances over 1000 Episodes")
+ax_hist.set_title("Distribution of Final Distances")
 ax_hist.set_xlabel("Max Distance Achieved (m)")
 ax_hist.set_ylabel("Number of Episodes")
 ax_hist.grid(axis='y', alpha=0.75)

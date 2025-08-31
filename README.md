@@ -1,5 +1,7 @@
 # Autonomous Glider Reinforcement Learning
 
+⚠️IMPORTANT⚠️: This project already contains a trained model. If you wish to create one from scratch, please delete or rename both glider_agent.zip and vec_normalize.pkl in the ./results/models/ folder.
+
 This project, created for the course AE4350 at TU Delft, is an implementation of a reinforcement learning agent that learns the complex, bio-inspired skill of cross-country soaring. The agent is trained to pilot a simulated glider, intelligently utilizing procedurally generated thermal updrafts to maximize its travel distance.
 
 The final agent was trained using a multi-stage **curriculum learning** approach, where it first mastered a simplified environment before being fine-tuned on a more challenging and realistic one. The resulting policy demonstrates sophisticated energy management, mimicking the "climb-and-glide" strategy of real-world soaring birds.
@@ -74,7 +76,7 @@ To evaluate your trained agent and visualize its flight path:
 ```bash
 python evaluate.py
 ```
-This will print performance statistics averaged over 50 episodes and generate plots of a typical flight.
+This will print performance statistics averaged over 50 episodes (1000 episodes shows better results but takes a while to run) and generate plots of a typical flight.
 
 ---
 
