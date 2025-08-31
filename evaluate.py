@@ -8,57 +8,75 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from src import config
 
+print(f"--- Running Evaluation with DIFFICULTY = {config.DIFFICULTY} ---")
 register(id=config.ENV_ID, entry_point='src.glider_env:GliderEnv')
-
 try:
     eval_env = DummyVecEnv([lambda: gym.make(config.ENV_ID)])
     eval_env = VecNormalize.load(config.VEC_NORMALIZE_PATH, eval_env)
     eval_env.training = False
     eval_env.norm_reward = False
-except FileNotFoundError:
-    print("Could not find normalization stats. Please train the agent first.")
-    exit()
-
-try:
     model = PPO.load(config.MODEL_PATH, env=eval_env)
 except FileNotFoundError:
-    print(f"Could not find model. Please train the agent first.")
+    print("Could not find model or normalization stats. Please train the agent first.")
     exit()
 
-# --- Run the evaluation for stats ---
-all_episode_lengths = []
-all_episode_rewards = []
-all_max_distance = []
 
-for _ in range(config.EVAL_EPISODES):
-    obs = eval_env.reset()
-    done = False
-    truncated = False
-    episode_length = 0
-    episode_reward = 0
-    episode_max_dist = 0
-    while not (done or truncated):
-        action, _ = model.predict(obs, deterministic=False)
-        obs, reward, dones, info = eval_env.step(action)
-        done = dones[0]
-        truncated = info[0].get("TimeLimit.truncated", False)
-        episode_length += 1
-        episode_reward += reward[0]
-        if done or truncated:
-            episode_max_dist = info[0]['ep_max_x_distance']
-
-    all_episode_rewards.append(episode_reward)
-    all_max_distance.append(episode_max_dist)
-    all_episode_lengths.append(episode_length)
-
-print("--- Evaluation Results ---")
-print(f"Average episode length: {np.mean(all_episode_lengths):.2f} steps")
-print(f"Average episode reward: {np.mean(all_episode_rewards):.2f}")
-print(f"Average max distance travelled: {np.mean(all_max_distance):.2f} meters")
+def run_evaluation_batch(env, is_deterministic, num_episodes):
+    """Runs a batch of episodes on a standard, re-randomizing environment."""
+    print(f"\nRunning {num_episodes} episodes (deterministic={is_deterministic}, seed=Random)...")
+    batch_distances = []
+    for _ in range(num_episodes):
+        obs = env.reset()
+        done = truncated = False
+        episode_max_dist = 0
+        while not (done or truncated):
+            action, _ = model.predict(obs, deterministic=is_deterministic)
+            obs, _, dones, info = env.step(action)
+            done = dones[0]
+            truncated = info[0].get("TimeLimit.truncated", False)
+            if done or truncated:
+                episode_max_dist = info[0].get('ep_max_x_distance', 0)
+        batch_distances.append(episode_max_dist)
+    return batch_distances
 
 
-# Plotting a single flight path
-print("\n✈️  Visualizing one flight path...")
+all_max_distance_stochastic = run_evaluation_batch(eval_env, is_deterministic=False, num_episodes=config.EVAL_EPISODES)
+all_max_distance_deterministic = run_evaluation_batch(eval_env, is_deterministic=True,
+                                                      num_episodes=config.EVAL_EPISODES)
+
+
+
+def run_fixed_map_batch(vec_normalize_env, num_episodes, fixed_seed):
+    """Runs a batch of episodes on a SINGLE, NON-RANDOM map."""
+    print(f"\nRunning {num_episodes} episodes (deterministic=False, seed={fixed_seed})...")
+
+    fixed_env = gym.make(config.ENV_ID)
+    batch_distances = []
+    for _ in range(num_episodes):
+        obs, _ = fixed_env.reset(seed=fixed_seed)
+        done = truncated = False
+        while not (done or truncated):
+            normalized_obs = vec_normalize_env.normalize_obs(obs)
+            action, _ = model.predict(normalized_obs, deterministic=False)
+            obs, _, terminated, truncated, info = fixed_env.step(action)
+            done = terminated or truncated
+        batch_distances.append(info.get('ep_max_x_distance', 0))
+    fixed_env.close()
+    return batch_distances
+
+
+all_max_distance_fixed_map = run_fixed_map_batch(eval_env, num_episodes=config.EVAL_EPISODES, fixed_seed=123)
+
+print("\n--- Evaluation Results ---")
+print(f"Mean Distance (Random Maps, Stochastic Policy): {np.mean(all_max_distance_stochastic):.2f} m")
+print(f"Mean Distance (Random Maps, Deterministic Policy): {np.mean(all_max_distance_deterministic):.2f} m")
+print(f"Mean Distance (Fixed Map, Stochastic Policy): {np.mean(all_max_distance_fixed_map):.2f} m")
+print(f"\nStandard Deviation (Random Maps, Stochastic Policy): {np.std(all_max_distance_stochastic):.2f} m")
+print(f"Standard Deviation (Fixed Map, Stochastic Policy): {np.std(all_max_distance_fixed_map):.2f} m")
+
+
+
+print("\nVisualizing one flight path...")
 vis_env = gym.make(config.ENV_ID)
 obs_vis, info = vis_env.reset()
 done = False
@@ -127,23 +145,30 @@ ax2.set_ylabel("Altitude (m)")
 ax2.legend()
 ax2.grid(True)
 
-
-# --- Create a second figure for the histogram ---
+# Plot 3: Histograms
 fig_hist, ax_hist = plt.subplots(figsize=(10, 6))
-ax_hist.hist(all_max_distance, bins=20, edgecolor='black')
-ax_hist.set_title("Distribution of Final Distances")
+ax_hist.hist(all_max_distance_fixed_map, bins=20, edgecolor='black')
+ax_hist.set_title("Distribution of Final Distances on a FIXED Map (Stochastic Policy)")
+
+fig_hist, ax_hist = plt.subplots(figsize=(10, 6))
+
+ax_hist.hist(all_max_distance_stochastic, bins=20, edgecolor='black', alpha=0.7, label='Stochastic (deterministic=False)')
+ax_hist.hist(all_max_distance_deterministic, bins=20, edgecolor='black', alpha=0.7, label='Deterministic (deterministic=True)')
+
+ax_hist.set_title("Distribution of Final Distances over 1000 Episodes")
 ax_hist.set_xlabel("Max Distance Achieved (m)")
 ax_hist.set_ylabel("Number of Episodes")
 ax_hist.grid(axis='y', alpha=0.75)
+ax_hist.legend()
 
-# Add a vertical line for the mean distance
-mean_dist = np.mean(all_max_distance)
-ax_hist.axvline(mean_dist, color='r', linestyle='dashed', linewidth=2)
-ax_hist.text(mean_dist*1.1, ax_hist.get_ylim()[1]*0.9, f'Mean: {mean_dist:.0f}m', color='r')
+mean_sto = np.mean(all_max_distance_stochastic)
+mean_det = np.mean(all_max_distance_deterministic)
+ax_hist.axvline(mean_sto, color='blue', linestyle='dashed', linewidth=2, label=f'Stochastic Mean: {mean_sto:.0f}m')
+ax_hist.axvline(mean_det, color='red', linestyle='dashed', linewidth=2, label=f'Deterministic Mean: {mean_det:.0f}m')
+
+ax_hist.legend()
 
 plt.tight_layout()
 plt.show()
 
-
 eval_env.close()
-vis_env.close()

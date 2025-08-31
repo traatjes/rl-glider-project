@@ -114,22 +114,19 @@ class GliderEnv(gym.Env):
     def _check_termination(self):
         crashed = self.altitude <= 0
         over_ceiling = self.altitude >= 2000
-        offside = abs(self.position[1]) > 1200
         truncated = self.current_step >= self.max_steps
-        terminated = crashed or over_ceiling or offside
+        terminated = crashed or over_ceiling
 
         return terminated, truncated
 
     def _calculate_reward(self, terminated, truncated):
         reward = 0.0
 
-        # Unconditional Progress Reward (Always Active)
+        # Unconditional Progress Reward/Penalty
         progress = self.position[0] - self.last_x
         if progress > 0:
             reward += config.REWARD_COEFF_PROGRESS * progress
         elif progress < 0 and not self.in_thermal:
-            # Only penalize backward movement if not inside a thermal
-            # The penalty is proportional to how much it moved backward
             reward += config.REWARD_COEFF_PROGRESS_NEG * progress
         self.last_x = self.position[0]
 

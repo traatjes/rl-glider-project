@@ -22,8 +22,8 @@ To set up and run this project locally, follow these steps.
 
 **1. Clone the repository:**
 ```bash
-git clone [https://github.com/](https://github.com/)[YourUsername]/[Your-Repo-Name].git
-cd [Your-Repo-Name]
+git clone https://github.com/traatjes/rl-glider-project.git
+cd rl-glider-project.git
 ```
 
 **2. Create and activate a virtual environment:**
